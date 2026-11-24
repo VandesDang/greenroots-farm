@@ -4,8 +4,17 @@ import {
   FarmingActionType,
   SeasonStatus,
 } from "@greenroots/shared";
+import { resolveSharedApiErrorMessage } from "@greenroots/shared";
 import { api } from "@/lib/api-client";
 import { filterApprovedProductImages } from "@/lib/image-url";
+import {
+  buildCatalogApiQuery,
+  buildCategoryTree,
+  CATALOG_PAGE_LIMIT,
+  type CatalogApiQuery,
+  type CatalogCategoryNode,
+  type CatalogFilterState,
+} from "@/services/catalog-query";
 import type { components } from "@/types/api-schema";
 import type {
   BatchTraceRecord,
@@ -721,4 +730,139 @@ export async function fetchLiveProductBySlug(
  */
 export function getShowcaseTraceList(): readonly BatchTraceRecord[] {
   return Object.values(SHOWCASE_TRACE_RECORDS);
+}
+
+/** Pagination metadata returned by `GET /api/v1/products`. */
+export interface CatalogPaginationMeta {
+  readonly page: number;
+  readonly limit: number;
+  readonly total: number;
+  readonly totalPages: number;
+}
+
+/** Injectable transport dependencies for `fetchCatalogListing`. */
+export interface CatalogListingDeps {
+  readonly fetchCategories: (query: {
+    limit: number;
+    sort: "sortOrder:asc";
+  }) => Promise<{ data?: { data: readonly CategoryDto[] }; error?: unknown }>;
+  readonly fetchProducts: (query: CatalogApiQuery) => Promise<{
+    data?: {
+      data: readonly ProductDto[];
+      meta?: Partial<CatalogPaginationMeta>;
+    };
+    error?: unknown;
+  }>;
+}
+
+/** Result returned by `fetchCatalogListing` for the SF-02 `/products` route. */
+export interface CatalogListingResult {
+  readonly products: readonly StorefrontProduct[];
+  readonly categories: readonly CatalogCategoryNode[];
+  readonly meta: CatalogPaginationMeta;
+  readonly errorMessage?: string;
+}
+
+const defaultCatalogListingDeps: CatalogListingDeps = {
+  fetchCategories: (query) =>
+    api.GET("/api/v1/categories", { params: { query } }),
+  fetchProducts: (query) => api.GET("/api/v1/products", { params: { query } }),
+};
+
+function extractProblemError(error: unknown):
+  | {
+      code?: string;
+      detail?: string;
+    }
+  | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+  const record = error as Record<string, unknown>;
+  return {
+    code: typeof record.code === "string" ? record.code : undefined,
+    detail: typeof record.detail === "string" ? record.detail : undefined,
+  };
+}
+
+/**
+ * Fetches live paginated products and the two-level active category tree for SF-02.
+ * Category failures degrade silently to an empty sidebar while product failures return
+ * a localized RFC 9457 error message without falling back to mock fixtures.
+ *
+ * @param filters Sanitized URL filter state from `parseCatalogSearchParams`.
+ * @param deps Optional injectable API transport for unit testing.
+ * @returns `CatalogListingResult` containing products, 2-level categories, and pagination meta.
+ */
+export async function fetchCatalogListing(
+  filters: CatalogFilterState,
+  deps: CatalogListingDeps = defaultCatalogListingDeps,
+): Promise<CatalogListingResult> {
+  const fallbackMeta: CatalogPaginationMeta = {
+    page: filters.page,
+    limit: CATALOG_PAGE_LIMIT,
+    total: 0,
+    totalPages: 0,
+  };
+
+  const apiQuery = buildCatalogApiQuery(filters);
+
+  const [categoriesOutcome, productsOutcome] = await Promise.allSettled([
+    deps.fetchCategories({ limit: 100, sort: "sortOrder:asc" }),
+    deps.fetchProducts(apiQuery),
+  ]);
+
+  const categories =
+    categoriesOutcome.status === "fulfilled" &&
+    !categoriesOutcome.value.error &&
+    categoriesOutcome.value.data?.data
+      ? buildCategoryTree(categoriesOutcome.value.data.data)
+      : [];
+
+  if (productsOutcome.status === "rejected") {
+    return {
+      products: [],
+      categories,
+      meta: fallbackMeta,
+      errorMessage: resolveSharedApiErrorMessage(undefined),
+    };
+  }
+
+  const productsRes = productsOutcome.value;
+  if (productsRes.error || !productsRes.data?.data) {
+    const problem = extractProblemError(productsRes.error);
+    return {
+      products: [],
+      categories,
+      meta: fallbackMeta,
+      errorMessage: resolveSharedApiErrorMessage(
+        problem?.code,
+        problem?.detail,
+      ),
+    };
+  }
+
+  const rawItems = productsRes.data.data;
+  const products = rawItems
+    .filter((dto) => dto.isActive)
+    .map((dto) => mapProductDtoToStorefront(dto));
+
+  const rawMeta = productsRes.data.meta;
+  const total =
+    typeof rawMeta?.total === "number" ? rawMeta.total : products.length;
+  const limit =
+    typeof rawMeta?.limit === "number" && rawMeta.limit > 0
+      ? rawMeta.limit
+      : CATALOG_PAGE_LIMIT;
+  const page = typeof rawMeta?.page === "number" ? rawMeta.page : filters.page;
+  const totalPages =
+    typeof rawMeta?.totalPages === "number"
+      ? rawMeta.totalPages
+      : Math.ceil(total / limit);
+
+  return {
+    products,
+    categories,
+    meta: { page, limit, total, totalPages },
+  };
 }
