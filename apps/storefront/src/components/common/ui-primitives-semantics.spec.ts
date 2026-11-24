@@ -75,6 +75,46 @@ describe("Storefront UI Primitives Semantics", () => {
       );
       expect(underMinHtml).toContain('aria-valuenow="0"');
     });
+
+    // Invariant: INV-5
+    it("renders markdown discount percentage and live stock label when showStock is enabled", () => {
+      const standardHtml = renderToStaticMarkup(
+        createElement(ProductCard, {
+          product: {
+            ...buildRescueProduct(0),
+            isRescueDeal: false,
+            rescueBatchProgressPct: undefined,
+            hoursRemaining: undefined,
+            basePriceVnd: 40_000,
+            salePriceVnd: 30_000,
+            availableQuantity: 8,
+            unit: "túi",
+          },
+          showStock: true,
+        }),
+      );
+
+      expect(standardHtml).toContain("-25%");
+      expect(standardHtml).toContain("Còn 8 túi");
+      expect(standardHtml).toContain("MUA NGAY");
+
+      const outOfStockHtml = renderToStaticMarkup(
+        createElement(ProductCard, {
+          product: {
+            ...buildRescueProduct(0),
+            isRescueDeal: false,
+            rescueBatchProgressPct: undefined,
+            hoursRemaining: undefined,
+            availableQuantity: 0,
+            unit: "túi",
+          },
+          showStock: true,
+        }),
+      );
+
+      expect(outOfStockHtml).toContain("Tạm hết hàng");
+      expect(outOfStockHtml).toContain("disabled");
+    });
   });
 
   describe("Search InputGroup forms", () => {
