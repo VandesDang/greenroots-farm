@@ -3,6 +3,31 @@ import type {
   FarmingActionType,
   SeasonStatus,
 } from "@greenroots/shared";
+import type { components } from "@/types/api-schema";
+
+/** Alias for the generated OpenAPI public QR traceability DTO. */
+export type TraceRecordDto = components["schemas"]["TraceRecordDto"];
+
+/**
+ * Injectable transport dependency for `fetchLiveTraceByBatchCode` so unit specs
+ * remain isolated without mutating Bun's global module registry.
+ */
+export interface TraceDetailDeps {
+  readonly fetchTraceByBatchCode: (batchCode: string) => Promise<{
+    data?: { data: TraceRecordDto };
+    error?: unknown;
+    response?: { readonly status: number };
+  }>;
+}
+
+/**
+ * Discriminated live trace lookup outcome distinguishing unknown batch codes (`404`)
+ * from transient upstream failures (`5xx` or offline network).
+ */
+export type TraceDetailResult =
+  | { readonly status: "ok"; readonly dto: TraceRecordDto }
+  | { readonly status: "not_found" }
+  | { readonly status: "error" };
 
 /** Single append-only farming log entry rendered in batch traceability timelines. */
 export interface FarmingLogEntry {

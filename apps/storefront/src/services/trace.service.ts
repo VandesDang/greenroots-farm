@@ -3,7 +3,71 @@ import {
   FarmingActionType,
   SeasonStatus,
 } from "@greenroots/shared";
-import type { BatchTraceRecord } from "@/types/trace.types";
+import { api } from "@/lib/api-client";
+import type {
+  BatchTraceRecord,
+  TraceDetailDeps,
+  TraceDetailResult,
+} from "@/types/trace.types";
+
+function extractResponseStatus(result: {
+  readonly response?: { readonly status: number };
+  readonly error?: unknown;
+}): number | undefined {
+  if (result.response?.status !== undefined) {
+    return result.response.status;
+  }
+  if (
+    typeof result.error === "object" &&
+    result.error !== null &&
+    "status" in result.error &&
+    typeof (result.error as { status?: unknown }).status === "number"
+  ) {
+    return (result.error as { status: number }).status;
+  }
+  return undefined;
+}
+
+const defaultTraceDetailDeps: TraceDetailDeps = {
+  fetchTraceByBatchCode: (batchCode) =>
+    api.GET("/api/v1/trace/{batchCode}", {
+      params: { path: { batchCode } },
+    }),
+};
+
+/**
+ * Fetches a public QR traceability record from `GET /api/v1/trace/:batchCode`.
+ * Returns `"not_found"` for `400`/`404` (unknown or malformed batch code) and
+ * `"error"` on transient `5xx` or network outages, never falling back to static fixtures.
+ *
+ * @param batchCode Candidate batch code from the route param.
+ * @param deps Optional injectable transport adapter for deterministic unit tests.
+ * @returns Discriminated `TraceDetailResult`.
+ */
+export async function fetchLiveTraceByBatchCode(
+  batchCode: string,
+  deps: TraceDetailDeps = defaultTraceDetailDeps,
+): Promise<TraceDetailResult> {
+  const normalized = batchCode.trim().toUpperCase();
+  if (!normalized) {
+    return { status: "not_found" };
+  }
+
+  try {
+    const result = await deps.fetchTraceByBatchCode(normalized);
+    if (result.error || !result.data?.data) {
+      const status = extractResponseStatus(result);
+      if (status === 400 || status === 404) {
+        return { status: "not_found" };
+      }
+      return { status: "error" };
+    }
+
+    return { status: "ok", dto: result.data.data };
+  } catch {
+    return { status: "error" };
+  }
+}
 
 // TODO(farms-api): Wire GET /api/v1/farms/trace/:batchCode once FarmsModule controller lands.
 const SHOWCASE_TRACE_RECORDS: Record<string, BatchTraceRecord> = {
