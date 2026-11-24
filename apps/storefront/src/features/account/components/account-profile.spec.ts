@@ -108,8 +108,8 @@ describe("Account Profile UI Components", () => {
 
       expect(html).toContain('href="/account/profile"');
       expect(html).toContain('href="/account/addresses"');
+      expect(html).toContain('href="/account/orders"');
       expect(html).toContain('href="/subscriptions"');
-      expect(html).not.toContain("/orders");
       expect(html).toContain("MA");
       expect(html).toContain("Nguyễn Minh Anh");
 

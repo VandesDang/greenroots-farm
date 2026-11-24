@@ -22,7 +22,7 @@ import type { StorefrontSessionUser } from "@/types/auth.types";
 /**
  * Active customer account sub-route key highlighted in `AccountSidebar`.
  */
-export type AccountSidebarSection = "profile" | "addresses";
+export type AccountSidebarSection = "profile" | "addresses" | "orders";
 
 const ACCOUNT_NAV_ITEMS = [
   {
@@ -34,6 +34,11 @@ const ACCOUNT_NAV_ITEMS = [
     key: "addresses",
     href: "/account/addresses",
     label: "Sổ địa chỉ",
+  },
+  {
+    key: "orders",
+    href: "/account/orders",
+    label: "Đơn hàng của tôi",
   },
   {
     key: "subscriptions",
@@ -242,7 +247,11 @@ export function AccountSidebar({ user, activeSection }: AccountSidebarProps) {
   const storeUser = useAuthStore((state) => state.user);
   const resolvedSection: AccountSidebarSection =
     activeSection ??
-    (pathname.startsWith("/account/addresses") ? "addresses" : "profile");
+    (pathname.startsWith("/account/addresses")
+      ? "addresses"
+      : pathname.startsWith("/account/orders")
+        ? "orders"
+        : "profile");
   const displayUser = storeUser ?? user;
 
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
