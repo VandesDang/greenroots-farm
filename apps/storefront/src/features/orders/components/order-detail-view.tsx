@@ -13,6 +13,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  buttonVariants,
 } from "@greenroots/ui";
 import { AlertTriangle, ArrowLeft, Leaf } from "lucide-react";
 import {
@@ -29,10 +30,12 @@ import {
   buildOrderTimelineSteps,
   canReorderOrder,
 } from "../utils/order-history.utils";
+import { resolveComplaintWindowState } from "../../complaints/utils/complaint.utils";
 import { ReorderButton } from "./reorder-button";
 
 interface OrderDetailViewProps {
   readonly order: OrderDto;
+  readonly serverNowMs?: number;
 }
 
 function resolveStepToneClass(state: OrderTimelineStep["state"]): string {
@@ -82,13 +85,21 @@ function OrderItemThumbnail({
  * Customer order detail view (SF-05 `/orders/[id]`) rendering an honest `OrderDto`
  * timeline, immutable receiver/address snapshot, line items, and totals.
  */
-export function OrderDetailView({ order }: OrderDetailViewProps) {
+export function OrderDetailView({ order, serverNowMs }: OrderDetailViewProps) {
   const timelineSteps = buildOrderTimelineSteps(
     order.orderStatus,
     order.createdAt,
     order.updatedAt,
   );
-  const showComplaintEntry = order.orderStatus === OrderStatus.DELIVERED;
+  const showComplaintEntry =
+    order.orderStatus === OrderStatus.DELIVERED ||
+    order.orderStatus === OrderStatus.COMPLETED;
+  const complaintWindowState = resolveComplaintWindowState(
+    order.orderStatus,
+    order.deliveredAt,
+    serverNowMs ?? 0,
+  );
+  const canSubmitComplaint = complaintWindowState === "open";
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 pt-4 pb-8 lg:px-6 lg:pt-5 lg:pb-10">
@@ -137,30 +148,50 @@ export function OrderDetailView({ order }: OrderDetailViewProps) {
           ) : null}
 
           {showComplaintEntry ? (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="inline-flex" tabIndex={0}>
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        disabled
-                        className="gap-1.5"
-                      >
-                        <AlertTriangle className="size-4" aria-hidden="true" />
-                        <span>Gửi khiếu nại (Sắp ra mắt)</span>
-                      </Button>
-                    </span>
-                  }
-                />
-                <TooltipContent side="bottom" className="max-w-xs text-pretty">
-                  Hỗ trợ khiếu nại trong 24h sau khi nhận hàng. Tính năng gửi
-                  trực tuyến đang được hoàn thiện — vui lòng liên hệ hotline{" "}
-                  {FARM_METADATA.hotline} để được xử lý ngay.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            canSubmitComplaint ? (
+              <Link
+                href={`/orders/${order.id}/complaint`}
+                className={buttonVariants({
+                  variant: "destructive",
+                  className: "gap-1.5",
+                })}
+              >
+                <AlertTriangle className="size-4" aria-hidden="true" />
+                <span>Gửi khiếu nại</span>
+              </Link>
+            ) : (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="inline-flex" tabIndex={0}>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          disabled
+                          className="gap-1.5"
+                        >
+                          <AlertTriangle
+                            className="size-4"
+                            aria-hidden="true"
+                          />
+                          <span>Đã hết hạn khiếu nại</span>
+                        </Button>
+                      </span>
+                    }
+                  />
+                  <TooltipContent
+                    side="bottom"
+                    className="max-w-xs text-pretty"
+                  >
+                    Chỉ hỗ trợ khiếu nại trong{" "}
+                    {FARM_METADATA.complaintWindowHours}h sau khi nhận hàng. Vui
+                    lòng liên hệ hotline {FARM_METADATA.hotline} để được hỗ trợ
+                    thêm.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )
           ) : null}
         </div>
       </section>

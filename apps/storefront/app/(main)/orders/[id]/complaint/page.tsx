@@ -1,41 +1,91 @@
+import type { Metadata } from "next";
+import { forbidden, notFound, redirect } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
-import { Card, CardContent, Skeleton } from "@greenroots/ui";
-import { FARM_METADATA } from "@/constants/farm-metadata.constant";
+import { Skeleton } from "@greenroots/ui";
+import { ComplaintView } from "@/features/complaints/components/complaint-view";
+import { resolveCustomerComplaintSession } from "@/features/complaints/services/complaints.server";
 
-async function ComplaintContent({
-  params,
-}: {
-  readonly params: Promise<{ id: string }>;
-}) {
+export const metadata: Metadata = {
+  title: "Khiếu nại đơn hàng",
+  description:
+    "Gửi khiếu nại đơn hàng GreenRoots Farm trong 24 giờ sau khi nhận hàng kèm ảnh/video bằng chứng.",
+};
+
+interface OrderComplaintPageProps {
+  readonly params: Promise<{ readonly id: string }>;
+}
+
+async function OrderComplaintGate({ params }: OrderComplaintPageProps) {
+  // Force per-request dynamic execution before uncached params/session reads under cacheComponents.
+  await connection();
   const { id } = await params;
 
+  const resolution = await resolveCustomerComplaintSession(id);
+
+  if (resolution.status === "not_found") {
+    notFound();
+  }
+
+  if (resolution.status === "unauthenticated") {
+    redirect(
+      `/login?redirect=${encodeURIComponent(`/orders/${id}/complaint`)}`,
+    );
+  }
+
+  if (resolution.status === "forbidden") {
+    forbidden();
+  }
+
+  if (resolution.status === "degraded") {
+    return (
+      <ComplaintSkeleton>
+        <p className="text-sm text-gray-500">
+          Không thể tải trang khiếu nại lúc này. Vui lòng tải lại sau ít giây.
+        </p>
+      </ComplaintSkeleton>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-xl px-4 py-8 lg:px-6">
-      <Card className="border-border-subtle bg-white">
-        <CardContent className="space-y-2 p-6">
-          <h1 className="text-lg font-extrabold text-red-600">
-            Khiếu nại đơn hàng trong {FARM_METADATA.complaintWindowHours}h
-            (SF-05)
-          </h1>
-          <p className="text-xs text-gray-600">
-            Mã đơn hàng: <strong>{id}</strong>. Yêu cầu tải 1–5 ảnh bằng chứng
-            nông sản dập nát trước khi gửi về bộ phận CSKH.
-          </p>
-        </CardContent>
-      </Card>
+    <ComplaintView
+      order={resolution.order}
+      complaints={resolution.complaints}
+      serverNowMs={Date.now()}
+    />
+  );
+}
+
+function ComplaintSkeleton({
+  children,
+}: {
+  readonly children?: React.ReactNode;
+}) {
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 lg:px-6">
+      <div className="space-y-3 rounded-xl border border-border-subtle bg-white p-6">
+        <Skeleton className="h-6 w-3/4 bg-gray-200" />
+        <Skeleton className="h-4 w-full bg-gray-200" />
+        <Skeleton className="h-4 w-5/6 bg-gray-200" />
+        {children}
+      </div>
     </div>
   );
 }
 
+/**
+ * Authenticated customer complaint route (`/orders/[id]/complaint`, SF-05).
+ */
 export default function OrderComplaintPage({
   params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+}: OrderComplaintPageProps) {
   return (
     <Suspense
       fallback={
-        <div aria-hidden="true" className="mx-auto max-w-xl px-4 py-8 lg:px-6">
+        <div
+          aria-hidden="true"
+          className="mx-auto w-full max-w-6xl px-4 py-8 lg:px-6"
+        >
           <div className="space-y-3 rounded-xl border border-border-subtle bg-white p-6">
             <Skeleton className="h-6 w-3/4 bg-gray-200" />
             <Skeleton className="h-4 w-full bg-gray-200" />
@@ -44,7 +94,7 @@ export default function OrderComplaintPage({
         </div>
       }
     >
-      <ComplaintContent params={params} />
+      <OrderComplaintGate params={params} />
     </Suspense>
   );
 }

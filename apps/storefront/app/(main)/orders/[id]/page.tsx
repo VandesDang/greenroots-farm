@@ -42,7 +42,7 @@ async function OrderDetailGate({ params }: OrderDetailPageProps) {
     return <OrderDetailDegradedView />;
   }
 
-  return <OrderDetailView order={resolution.order} />;
+  return <OrderDetailView order={resolution.order} serverNowMs={Date.now()} />;
 }
 
 /**
