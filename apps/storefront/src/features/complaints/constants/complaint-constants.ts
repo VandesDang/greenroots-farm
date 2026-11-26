@@ -1,5 +1,9 @@
 import { ComplaintResolution, ComplaintStatus } from "@greenroots/shared";
 
+/** Complaint reason bounds mirroring the API `CreateComplaintDto` (10..2000 chars). */
+export const COMPLAINT_REASON_MIN_LENGTH = 10;
+export const COMPLAINT_REASON_MAX_LENGTH = 2000;
+
 /** Per-file byte ceilings for client-side pre-validation (Cloudinary re-verifies server-side). */
 export const COMPLAINT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 export const COMPLAINT_VIDEO_MAX_BYTES = 15 * 1024 * 1024;

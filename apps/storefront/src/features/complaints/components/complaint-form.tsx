@@ -1,21 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   Alert,
+  AlertDescription,
   Button,
   Checkbox,
+  Label,
   RadioGroup,
   RadioGroupItem,
   Textarea,
-  toast,
 } from "@greenroots/ui";
 import { ImagePlus, Loader2, Send, Trash2, Video } from "lucide-react";
 import { BUSINESS_RULES } from "@greenroots/shared";
 import type { OrderDto } from "@/features/orders/schemas/order.schema";
 import type { ComplaintDto } from "../schemas/complaint.schema";
-import { submitComplaintAction } from "../actions/complaint-actions";
+import {
+  requestComplaintUploadSignatureAction,
+  submitComplaintAction,
+} from "../actions/complaint-actions";
 import {
   COMPLAINT_DESCRIPTION_MAX_LENGTH,
   COMPLAINT_REASON_OPTIONS,
@@ -32,7 +36,6 @@ import {
   readVideoDurationSeconds,
   uploadToCloudinary,
 } from "../utils/cloudinary-upload";
-import { requestComplaintUploadSignatureAction } from "../actions/complaint-actions";
 
 interface ComplaintFormProps {
   readonly order: OrderDto;
@@ -84,6 +87,17 @@ export function ComplaintForm({
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const previewUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const trackedUrls = previewUrlsRef.current;
+    return () => {
+      for (const previewUrl of trackedUrls) {
+        URL.revokeObjectURL(previewUrl);
+      }
+      trackedUrls.clear();
+    };
+  }, []);
 
   const isUploading =
     images.some((image) => image.status === "uploading") ||
@@ -91,6 +105,8 @@ export function ComplaintForm({
   const readyImageUrls = images
     .filter((image) => image.status === "ready" && image.url !== null)
     .map((image) => image.url!);
+  const firstImageError =
+    images.find((image) => image.status === "error")?.error ?? null;
 
   const customReasonError =
     reasonType === "other" && customReason.trim().length === 0
@@ -102,6 +118,7 @@ export function ComplaintForm({
     !isUploading &&
     !submitting &&
     readyImageUrls.length > 0 &&
+    firstImageError === null &&
     video?.status !== "error" &&
     customReasonError === null;
 
@@ -118,10 +135,12 @@ export function ComplaintForm({
         setSubmitError(error);
         continue;
       }
+      const previewUrl = URL.createObjectURL(file);
+      previewUrlsRef.current.add(previewUrl);
       accepted.push({
         id: crypto.randomUUID(),
         file,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
         status: "uploading",
         url: null,
         error: null,
@@ -187,6 +206,7 @@ export function ComplaintForm({
       const target = current.find((image) => image.id === id);
       if (target) {
         URL.revokeObjectURL(target.previewUrl);
+        previewUrlsRef.current.delete(target.previewUrl);
       }
       return current.filter((image) => image.id !== id);
     });
@@ -200,8 +220,16 @@ export function ComplaintForm({
     }
 
     const duration = await readVideoDurationSeconds(file);
+    if (Number.isNaN(duration) || duration <= 0) {
+      setSubmitError(
+        "Không thể đọc thời lượng video. Vui lòng thử video MP4, MOV hoặc WebM khác.",
+      );
+      return;
+    }
     if (!isComplaintVideoDurationValid(duration)) {
-      setSubmitError("Video vượt quá thời lượng 15 giây.");
+      setSubmitError(
+        `Video vượt quá thời lượng ${BUSINESS_RULES.COMPLAINT_VIDEO_MAX_SECONDS} giây.`,
+      );
       return;
     }
 
@@ -287,7 +315,6 @@ export function ComplaintForm({
       return;
     }
 
-    toast.success("Đã gửi khiếu nại thành công!");
     onSubmitted(result.complaint);
   }
 
@@ -312,24 +339,33 @@ export function ComplaintForm({
           }}
           className="grid grid-cols-1 gap-2 sm:grid-cols-2"
         >
-          {COMPLAINT_REASON_OPTIONS.map((option) => (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer items-center gap-2 rounded-md border p-3 text-sm font-semibold text-gray-900 transition-colors ${
-                reasonType === option.value
-                  ? "border-brand-forest bg-green-50"
-                  : "border-border-subtle bg-surface-warm hover:border-brand-forest"
-              }`}
-            >
-              <RadioGroupItem value={option.value} />
-              <span>{option.label}</span>
-            </label>
-          ))}
+          {COMPLAINT_REASON_OPTIONS.map((option) => {
+            const radioId = `complaint-reason-${option.value}`;
+            return (
+              <div
+                key={option.value}
+                className={`flex items-center gap-2 rounded-md border p-3 transition-colors ${
+                  reasonType === option.value
+                    ? "border-brand-forest bg-green-50"
+                    : "border-border-subtle bg-surface-warm hover:border-brand-forest"
+                }`}
+              >
+                <RadioGroupItem id={radioId} value={option.value} />
+                <Label
+                  htmlFor={radioId}
+                  className="flex-1 cursor-pointer text-sm font-semibold text-gray-900"
+                >
+                  {option.label}
+                </Label>
+              </div>
+            );
+          })}
         </RadioGroup>
 
         {reasonType === "other" ? (
           <div className="flex flex-col gap-1 pt-1">
             <Textarea
+              aria-label="Lý do khiếu nại khác"
               value={customReason}
               onChange={(event) => setCustomReason(event.target.value)}
               maxLength={150}
@@ -351,43 +387,56 @@ export function ComplaintForm({
           Sản phẩm gặp sự cố
         </span>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {order.items.map((item) => (
-            <label
-              key={item.id}
-              className="flex cursor-pointer items-center gap-2 rounded-md bg-surface-warm p-3"
-            >
-              <Checkbox
-                checked={affectedIds.includes(item.id)}
-                onCheckedChange={(checked) => {
-                  setAffectedIds((current) =>
-                    checked
-                      ? [...current, item.id]
-                      : current.filter((id) => id !== item.id),
-                  );
-                }}
-              />
-              <span className="text-sm text-gray-900">
-                {item.productName}
-                <span className="ml-1 text-xs text-gray-500 tabular-nums">
-                  {item.unit} × {item.quantity}
-                </span>
-              </span>
-            </label>
-          ))}
+          {order.items.map((item) => {
+            const checkboxId = `complaint-item-${item.id}`;
+            return (
+              <div
+                key={item.id}
+                className="flex items-center gap-2 rounded-md bg-surface-warm p-3"
+              >
+                <Checkbox
+                  id={checkboxId}
+                  checked={affectedIds.includes(item.id)}
+                  onCheckedChange={(checked) => {
+                    setAffectedIds((current) =>
+                      checked
+                        ? [...current, item.id]
+                        : current.filter((id) => id !== item.id),
+                    );
+                  }}
+                />
+                <Label
+                  htmlFor={checkboxId}
+                  className="flex-1 cursor-pointer text-sm font-normal text-gray-900"
+                >
+                  <span>
+                    {item.productName}
+                    <span className="ml-1 text-xs text-gray-500 tabular-nums">
+                      {item.unit} × {item.quantity}
+                    </span>
+                  </span>
+                </Label>
+              </div>
+            );
+          })}
         </div>
       </div>
 
       {/* Description */}
-      <label className="flex flex-col gap-1 border-t border-border-subtle pt-6">
+      <div className="flex flex-col gap-1 border-t border-border-subtle pt-6">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-bold text-gray-900">
+          <Label
+            htmlFor="complaint-description"
+            className="text-sm font-bold text-gray-900"
+          >
             Mô tả chi tiết tình trạng
-          </span>
+          </Label>
           <span className="text-xs text-gray-500 tabular-nums">
             {description.length} / {COMPLAINT_DESCRIPTION_MAX_LENGTH} ký tự
           </span>
         </div>
         <Textarea
+          id="complaint-description"
           value={description}
           onChange={(event) => setDescription(event.target.value)}
           rows={3}
@@ -395,7 +444,7 @@ export function ComplaintForm({
           placeholder="Mô tả rõ tình trạng sản phẩm khi nhận hàng để bộ phận hỗ trợ xử lý nhanh nhất..."
           className="bg-surface-warm"
         />
-      </label>
+      </div>
 
       {/* Photo upload */}
       <div className="flex flex-col gap-2 border-t border-border-subtle pt-6">
@@ -440,26 +489,29 @@ export function ComplaintForm({
                   Lỗi tải lên
                 </div>
               ) : null}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label="Xóa ảnh"
                 onClick={() => removeImage(image.id)}
-                className="absolute top-1 right-1 flex size-6 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-red-600"
+                className="absolute top-1 right-1 rounded-full bg-gray-900 text-white hover:bg-red-600 hover:text-white"
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />
-              </button>
+              </Button>
             </div>
           ))}
 
           {images.length < BUSINESS_RULES.COMPLAINT_MAX_IMAGES ? (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={() => imageInputRef.current?.click()}
-              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-brand-forest bg-green-50 p-2 text-center text-brand-dark transition-colors hover:bg-green-100"
+              className="flex aspect-square h-auto flex-col items-center justify-center gap-1 rounded-md border-dashed border-brand-forest bg-green-50 p-2 text-center text-brand-dark hover:bg-green-100 hover:text-brand-dark"
             >
               <ImagePlus className="size-5" aria-hidden="true" />
               <span className="text-xs font-semibold">Thêm ảnh</span>
-            </button>
+            </Button>
           ) : null}
         </div>
         <input
@@ -474,6 +526,12 @@ export function ComplaintForm({
             void addImages(files);
           }}
         />
+
+        {firstImageError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{firstImageError}</AlertDescription>
+          </Alert>
+        ) : null}
       </div>
 
       {/* Optional video */}
@@ -483,7 +541,8 @@ export function ComplaintForm({
             Video mở hộp (tùy chọn)
           </span>
           <span className="text-xs text-gray-500 tabular-nums">
-            Tối đa 1 video, ≤ 15s, ≤ 15MB
+            Tối đa 1 video, ≤ {BUSINESS_RULES.COMPLAINT_VIDEO_MAX_SECONDS}s, ≤
+            15MB
           </span>
         </div>
 
@@ -499,26 +558,33 @@ export function ComplaintForm({
                   className="size-4 animate-spin text-brand-forest"
                   aria-hidden="true"
                 />
-              ) : (
+              ) : video.status === "ready" ? (
                 <span className="text-xs font-semibold text-brand-dark">
                   Đã tải lên
                 </span>
+              ) : (
+                <span className="text-xs font-semibold text-red-600">
+                  Lỗi tải lên
+                </span>
               )}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-xs"
                 aria-label="Xóa video"
                 onClick={() => setVideo(null)}
-                className="flex size-6 items-center justify-center rounded-full bg-gray-900 text-white hover:bg-red-600"
+                className="rounded-full bg-gray-900 text-white hover:bg-red-600 hover:text-white"
               >
                 <Trash2 className="size-3.5" aria-hidden="true" />
-              </button>
+              </Button>
             </div>
           </div>
         ) : (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => videoInputRef.current?.click()}
-            className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border-subtle bg-surface-warm p-3 hover:border-brand-forest"
+            className="flex h-auto w-full items-center justify-between gap-3 rounded-md border-dashed border-border-subtle bg-surface-warm p-3 hover:border-brand-forest hover:bg-surface-warm"
           >
             <div className="flex items-center gap-2">
               <Video className="size-5 text-brand-forest" aria-hidden="true" />
@@ -527,14 +593,16 @@ export function ComplaintForm({
                   Chọn video quay cận cảnh sản phẩm
                 </span>
                 <span className="text-xs text-gray-500">
-                  Định dạng MP4, MOV (thời lượng ≤ 15 giây, dung lượng ≤ 15MB)
+                  Định dạng MP4, MOV, WebM (thời lượng ≤{" "}
+                  {BUSINESS_RULES.COMPLAINT_VIDEO_MAX_SECONDS} giây, dung lượng
+                  ≤ 15MB)
                 </span>
               </div>
             </div>
             <span className="rounded border border-border-subtle bg-white px-3 py-1.5 text-xs font-semibold text-brand-dark">
               Tải video
             </span>
-          </button>
+          </Button>
         )}
         <input
           ref={videoInputRef}
@@ -552,7 +620,7 @@ export function ComplaintForm({
 
         {video?.status === "error" && video.error ? (
           <Alert variant="destructive">
-            <span>{video.error}</span>
+            <AlertDescription>{video.error}</AlertDescription>
           </Alert>
         ) : null}
       </div>
@@ -578,7 +646,7 @@ export function ComplaintForm({
 
       {submitError ? (
         <Alert variant="destructive">
-          <span>{submitError}</span>
+          <AlertDescription>{submitError}</AlertDescription>
         </Alert>
       ) : null}
     </form>

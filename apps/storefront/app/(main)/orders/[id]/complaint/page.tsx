@@ -3,7 +3,10 @@ import { forbidden, notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import { Skeleton } from "@greenroots/ui";
-import { ComplaintView } from "@/features/complaints/components/complaint-view";
+import {
+  ComplaintDegradedView,
+  ComplaintView,
+} from "@/features/complaints/components/complaint-view";
 import { resolveCustomerComplaintSession } from "@/features/complaints/services/complaints.server";
 
 export const metadata: Metadata = {
@@ -38,13 +41,7 @@ async function OrderComplaintGate({ params }: OrderComplaintPageProps) {
   }
 
   if (resolution.status === "degraded") {
-    return (
-      <ComplaintSkeleton>
-        <p className="text-sm text-gray-500">
-          Không thể tải trang khiếu nại lúc này. Vui lòng tải lại sau ít giây.
-        </p>
-      </ComplaintSkeleton>
-    );
+    return <ComplaintDegradedView />;
   }
 
   return (
@@ -53,23 +50,6 @@ async function OrderComplaintGate({ params }: OrderComplaintPageProps) {
       complaints={resolution.complaints}
       serverNowMs={Date.now()}
     />
-  );
-}
-
-function ComplaintSkeleton({
-  children,
-}: {
-  readonly children?: React.ReactNode;
-}) {
-  return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8 lg:px-6">
-      <div className="space-y-3 rounded-xl border border-border-subtle bg-white p-6">
-        <Skeleton className="h-6 w-3/4 bg-gray-200" />
-        <Skeleton className="h-4 w-full bg-gray-200" />
-        <Skeleton className="h-4 w-5/6 bg-gray-200" />
-        {children}
-      </div>
-    </div>
   );
 }
 

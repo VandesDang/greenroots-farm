@@ -5,15 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Alert,
+  AlertDescription,
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@greenroots/ui";
-import { ArrowLeft, Clock, Headset, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Headset, Lock } from "lucide-react";
 import { BUSINESS_RULES } from "@greenroots/shared";
+import { AccountProfileDegradedCard } from "@/features/account/components/account-profile-view";
 import type { OrderDto } from "@/features/orders/schemas/order.schema";
 import type { ComplaintDto } from "../schemas/complaint.schema";
+import { COMPLAINT_STATUS_LABELS } from "../constants/complaint-constants";
 import { useAuthStore } from "@/stores/auth.store";
 import { formatViDateTime } from "@/lib/format";
 import {
@@ -45,7 +48,7 @@ export function ComplaintView({
 
   const serverComplaint: ComplaintDto | null = complaints.at(0) ?? null;
   const [localComplaint, setLocalComplaint] = useState<ComplaintDto | null>(
-    serverComplaint,
+    null,
   );
   const [tab, setTab] = useState<string>(serverComplaint ? "status" : "form");
   const [nowMs, setNowMs] = useState(serverNowMs);
@@ -106,16 +109,27 @@ export function ComplaintView({
         </div>
 
         <div className="inline-flex items-center gap-2 rounded-md bg-surface-warm px-3 py-2">
-          {windowState === "expired" ? (
+          {complaint ? (
+            <CheckCircle2
+              className="size-4 text-brand-forest"
+              aria-hidden="true"
+            />
+          ) : windowState === "expired" ? (
             <Lock className="size-4 text-red-600" aria-hidden="true" />
           ) : (
             <Clock className="size-4 text-brand-forest" aria-hidden="true" />
           )}
           <div className="flex flex-col">
             <span className="text-xs font-semibold text-gray-400">
-              Hạn gửi khiếu nại ({BUSINESS_RULES.COMPLAINT_WINDOW_HOURS}h)
+              {complaint
+                ? "Trạng thái khiếu nại"
+                : `Hạn gửi khiếu nại (${BUSINESS_RULES.COMPLAINT_WINDOW_HOURS}h)`}
             </span>
-            {windowState === "open" ? (
+            {complaint ? (
+              <span className="text-sm font-bold text-gray-900">
+                {COMPLAINT_STATUS_LABELS[complaint.status]}
+              </span>
+            ) : windowState === "open" ? (
               <span className="text-sm font-bold text-gray-900 tabular-nums">
                 Còn lại {formatComplaintCountdown(remainingMs)}
               </span>
@@ -141,24 +155,24 @@ export function ComplaintView({
             <TabsContent value="form" className="pt-5">
               {complaint ? (
                 <Alert>
-                  <span>
+                  <AlertDescription>
                     Bạn đã gửi khiếu nại cho đơn hàng này. Mỗi đơn hàng chỉ gửi
                     một khiếu nại duy nhất.
-                  </span>
+                  </AlertDescription>
                 </Alert>
               ) : windowState === "not_eligible" ? (
                 <Alert variant="destructive">
-                  <span>
+                  <AlertDescription>
                     Đơn hàng chưa đủ điều kiện để gửi khiếu nại. Khiếu nại chỉ
                     áp dụng cho đơn hàng đã giao thành công.
-                  </span>
+                  </AlertDescription>
                 </Alert>
               ) : windowState === "expired" ? (
                 <Alert variant="destructive">
-                  <span>
+                  <AlertDescription>
                     Đã quá thời hạn {BUSINESS_RULES.COMPLAINT_WINDOW_HOURS} giờ
                     kể từ lúc giao hàng để gửi khiếu nại.
-                  </span>
+                  </AlertDescription>
                 </Alert>
               ) : (
                 <ComplaintForm
@@ -181,10 +195,10 @@ export function ComplaintView({
                 />
               ) : (
                 <Alert>
-                  <span>
+                  <AlertDescription>
                     Chưa có khiếu nại nào cho đơn hàng này. Chuyển sang tab
                     &ldquo;Gửi khiếu nại&rdquo; để bắt đầu.
-                  </span>
+                  </AlertDescription>
                 </Alert>
               )}
             </TabsContent>
@@ -194,5 +208,20 @@ export function ComplaintView({
         <ComplaintOrderAside order={order} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Degraded recovery view when `/orders/[id]/complaint` fails to reach the API.
+ */
+export function ComplaintDegradedView() {
+  const router = useRouter();
+
+  return (
+    <AccountProfileDegradedCard
+      title="Không thể tải trang khiếu nại lúc này"
+      description="Kết nối tới máy chủ GreenRoots Farm đang tạm gián đoạn. Vui lòng thử tải lại sau ít giây."
+      onRetry={() => router.refresh()}
+    />
   );
 }

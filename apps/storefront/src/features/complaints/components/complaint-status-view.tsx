@@ -5,6 +5,7 @@ import { Badge, buttonVariants } from "@greenroots/ui";
 import { CheckCircle2, CircleDashed, Clock3, Hourglass } from "lucide-react";
 import type { ComplaintDto } from "../schemas/complaint.schema";
 import { formatViDateTime } from "@/lib/format";
+import { isApprovedStorefrontImageUrl } from "@/lib/image-url";
 import {
   COMPLAINT_RESOLUTION_LABELS,
   COMPLAINT_STATUS_LABELS,
@@ -42,6 +43,11 @@ export function ComplaintStatusView({
   const resolutionText =
     complaint.resolution !== null
       ? COMPLAINT_RESOLUTION_LABELS[complaint.resolution]
+      : null;
+  const approvedVideoUrl =
+    complaint.proofVideoUrl !== null &&
+    isApprovedStorefrontImageUrl(complaint.proofVideoUrl)
+      ? complaint.proofVideoUrl
       : null;
 
   return (
@@ -128,6 +134,20 @@ export function ComplaintStatusView({
                 className="size-14"
               />
             ))}
+          </div>
+        ) : null}
+
+        {approvedVideoUrl ? (
+          <div className="flex flex-col gap-1.5 pt-2">
+            <span className="text-xs font-semibold text-gray-400">
+              Video bằng chứng
+            </span>
+            <video
+              controls
+              preload="metadata"
+              src={approvedVideoUrl}
+              className="max-h-64 w-full rounded-md bg-black"
+            />
           </div>
         ) : null}
       </div>

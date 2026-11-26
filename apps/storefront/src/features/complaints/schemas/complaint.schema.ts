@@ -1,6 +1,10 @@
 import { BUSINESS_RULES } from "@greenroots/shared";
 import { z } from "zod";
 import type { components } from "@/types/api-schema";
+import {
+  COMPLAINT_REASON_MAX_LENGTH,
+  COMPLAINT_REASON_MIN_LENGTH,
+} from "../constants/complaint-constants";
 
 /** Customer-facing complaint projection mirroring the API `ComplaintDto`. */
 export type ComplaintDto = components["schemas"]["ComplaintDto"];
@@ -12,9 +16,7 @@ export type SignedUploadResponseDto =
 /** Request payload accepted by `POST /api/v1/orders/:id/complaints`. */
 export type CreateComplaintDto = components["schemas"]["CreateComplaintDto"];
 
-/** Complaint reason bounds mirroring the API `CreateComplaintDto` (10..2000 chars). */
-export const COMPLAINT_REASON_MIN_LENGTH = 10;
-export const COMPLAINT_REASON_MAX_LENGTH = 2000;
+export { COMPLAINT_REASON_MAX_LENGTH, COMPLAINT_REASON_MIN_LENGTH };
 
 /**
  * Validated payload for the signed Cloudinary upload signature Server Action.
