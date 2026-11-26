@@ -32,6 +32,45 @@ export interface ComplaintsServerDeps extends OrdersServerDeps {
   }>;
 }
 
+async function fetchOrderComplaintsResponse(
+  orderId: string,
+  deps?: Pick<ComplaintsServerDeps, "runWithRefresh" | "fetchComplaints">,
+) {
+  const runWithRefresh = deps?.runWithRefresh ?? runWithServerActionRefresh;
+  const fetchComplaints =
+    deps?.fetchComplaints ??
+    ((id: string) =>
+      api.GET("/api/v1/orders/{id}/complaints", {
+        params: { path: { id } },
+        cache: "no-store",
+      }));
+
+  return runWithRefresh(() => fetchComplaints(orderId));
+}
+
+/**
+ * Checks whether the authenticated customer already submitted a complaint for an order.
+ * Degrades cleanly to `false` when the lookup is unavailable so `/orders/[id]` still renders.
+ *
+ * @param orderId Order UUIDv7 identifier.
+ * @param deps Optional dependency overrides for unit testing.
+ * @returns `true` if at least one complaint exists for the order.
+ */
+export async function hasCustomerOrderComplaint(
+  orderId: string,
+  deps?: Pick<ComplaintsServerDeps, "runWithRefresh" | "fetchComplaints">,
+): Promise<boolean> {
+  try {
+    const result = await fetchOrderComplaintsResponse(orderId, deps);
+    if (!result.error && result.response.ok && result.data) {
+      return result.data.data.length > 0;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Resolves the owned order plus its complaints for `/orders/[id]/complaint`.
  * Reuses the order detail gate so ownership, UUID validation, and auth states stay consistent,
@@ -54,16 +93,7 @@ export async function resolveCustomerComplaintSession(
       return orderResolution;
     }
 
-    const runWithRefresh = deps?.runWithRefresh ?? runWithServerActionRefresh;
-    const fetchComplaints =
-      deps?.fetchComplaints ??
-      ((id) =>
-        api.GET("/api/v1/orders/{id}/complaints", {
-          params: { path: { id } },
-          cache: "no-store",
-        }));
-
-    const result = await runWithRefresh(() => fetchComplaints(orderId));
+    const result = await fetchOrderComplaintsResponse(orderId, deps);
 
     if (!result.error && result.response.ok && result.data) {
       return {

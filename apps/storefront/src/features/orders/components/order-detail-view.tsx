@@ -30,12 +30,13 @@ import {
   buildOrderTimelineSteps,
   canReorderOrder,
 } from "../utils/order-history.utils";
-import { resolveComplaintWindowState } from "../../complaints/utils/complaint.utils";
+import { resolveComplaintWindowState } from "@/lib/complaint-window";
 import { ReorderButton } from "./reorder-button";
 
 interface OrderDetailViewProps {
   readonly order: OrderDto;
   readonly serverNowMs?: number;
+  readonly hasComplaint?: boolean;
 }
 
 function resolveStepToneClass(state: OrderTimelineStep["state"]): string {
@@ -85,7 +86,11 @@ function OrderItemThumbnail({
  * Customer order detail view (SF-05 `/orders/[id]`) rendering an honest `OrderDto`
  * timeline, immutable receiver/address snapshot, line items, and totals.
  */
-export function OrderDetailView({ order, serverNowMs }: OrderDetailViewProps) {
+export function OrderDetailView({
+  order,
+  serverNowMs,
+  hasComplaint = false,
+}: OrderDetailViewProps) {
   const timelineSteps = buildOrderTimelineSteps(
     order.orderStatus,
     order.createdAt,
@@ -148,7 +153,18 @@ export function OrderDetailView({ order, serverNowMs }: OrderDetailViewProps) {
           ) : null}
 
           {showComplaintEntry ? (
-            canSubmitComplaint ? (
+            hasComplaint ? (
+              <Link
+                href={`/orders/${order.id}/complaint`}
+                className={buttonVariants({
+                  variant: "outline",
+                  className: "gap-1.5",
+                })}
+              >
+                <AlertTriangle className="size-4" aria-hidden="true" />
+                <span>Xem khiếu nại</span>
+              </Link>
+            ) : canSubmitComplaint ? (
               <Link
                 href={`/orders/${order.id}/complaint`}
                 className={buttonVariants({

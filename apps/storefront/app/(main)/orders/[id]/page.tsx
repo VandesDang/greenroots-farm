@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { forbidden, notFound, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import { OrderStatus } from "@greenroots/shared";
+import { hasCustomerOrderComplaint } from "@/features/complaints/services/complaints.server";
 import {
   OrderDetailDegradedView,
   OrderDetailSkeleton,
@@ -42,7 +44,20 @@ async function OrderDetailGate({ params }: OrderDetailPageProps) {
     return <OrderDetailDegradedView />;
   }
 
-  return <OrderDetailView order={resolution.order} serverNowMs={Date.now()} />;
+  const isComplaintEligibleStatus =
+    resolution.order.orderStatus === OrderStatus.DELIVERED ||
+    resolution.order.orderStatus === OrderStatus.COMPLETED;
+  const hasComplaint = isComplaintEligibleStatus
+    ? await hasCustomerOrderComplaint(id)
+    : false;
+
+  return (
+    <OrderDetailView
+      order={resolution.order}
+      serverNowMs={Date.now()}
+      hasComplaint={hasComplaint}
+    />
+  );
 }
 
 /**
