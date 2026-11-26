@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import type { OrderDto } from "@/features/orders/schemas/order.schema";
 import type { ComplaintDto } from "../schemas/complaint.schema";
-import { resolveCustomerComplaintSession } from "./complaints.server";
+import {
+  hasCustomerOrderComplaint,
+  resolveCustomerComplaintSession,
+} from "./complaints.server";
 
 const sampleOrder: OrderDto = {
   id: "019fa8bc-8f4d-7000-b366-e691f45cfb91",
@@ -112,7 +115,7 @@ describe("Complaints Server Resolver", () => {
     expect(res).toEqual({ status: "not_found" });
   });
 
-  it("returns unauthenticated when the complaint read is rejected with 401", async () => {
+  it("returns unauthenticated when the complaint read fails authorization", async () => {
     const res = await resolveCustomerComplaintSession(sampleOrder.id, {
       isDegraded: () => Promise.resolve(false),
       readToken: () => Promise.resolve("valid-token"),
@@ -130,5 +133,23 @@ describe("Complaints Server Resolver", () => {
     });
 
     expect(res).toEqual({ status: "unauthenticated" });
+  });
+
+  it("reports true from hasCustomerOrderComplaint when a complaint exists and degrades to false on error", async () => {
+    const present = await hasCustomerOrderComplaint(sampleOrder.id, {
+      runWithRefresh: passthroughRefresh as never,
+      fetchComplaints: () =>
+        Promise.resolve({
+          response: new Response(null, { status: 200 }),
+          data: { data: [sampleComplaint] },
+        }),
+    });
+    const failed = await hasCustomerOrderComplaint(sampleOrder.id, {
+      runWithRefresh: passthroughRefresh as never,
+      fetchComplaints: () => Promise.reject(new Error("network down")),
+    });
+
+    expect(present).toBe(true);
+    expect(failed).toBe(false);
   });
 });

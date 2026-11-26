@@ -110,7 +110,7 @@ describe("complaint Server Actions", () => {
       expect(res).toEqual({ ok: true, complaint });
     });
 
-    it("maps a 409 duplicate to the shared complaint conflict code", async () => {
+    it("maps a duplicate complaint conflict to the shared complaint error code", async () => {
       const res = await executeSubmitComplaintAction(input, {
         runWithRefresh: passthroughRefresh as never,
         postComplaint: () =>
