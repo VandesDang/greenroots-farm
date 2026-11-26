@@ -10,7 +10,7 @@ import {
   BUSINESS_RULES,
   OrderStatus,
 } from "@greenroots/shared";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { PG_ERROR_CODE } from "@/common/constants/error.constant";
 import { MESSAGES } from "@/common/constants/messages.constant";
 import { TIME_IN_MS } from "@/common/constants/time.constant";
@@ -24,6 +24,39 @@ import type { ComplaintProjection, CreateComplaintInput } from "./dto";
 
 const COMPLAINT_WINDOW_MS =
   BUSINESS_RULES.COMPLAINT_WINDOW_HOURS * TIME_IN_MS.HOUR;
+
+const COMPLAINT_COLUMNS = {
+  id: complaints.id,
+  orderId: complaints.orderId,
+  customerId: complaints.customerId,
+  reason: complaints.reason,
+  proofImageUrls: complaints.proofImageUrls,
+  proofVideoUrl: complaints.proofVideoUrl,
+  status: complaints.status,
+  resolution: complaints.resolution,
+  createdAt: complaints.createdAt,
+  updatedAt: complaints.updatedAt,
+} as const;
+
+type ComplaintRow = Pick<
+  typeof complaints.$inferSelect,
+  keyof typeof COMPLAINT_COLUMNS
+>;
+
+function mapComplaintRow(row: ComplaintRow): ComplaintProjection {
+  return {
+    id: row.id,
+    orderId: row.orderId,
+    customerId: row.customerId,
+    reason: row.reason,
+    proofImageUrls: row.proofImageUrls,
+    proofVideoUrl: row.proofVideoUrl,
+    status: row.status,
+    resolution: row.resolution,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
 
 function isUniqueViolation(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -121,35 +154,13 @@ export class ComplaintsService {
           proofImageUrls: input.proofImageUrls,
           proofVideoUrl: input.proofVideoUrl ?? null,
         })
-        .returning({
-          id: complaints.id,
-          orderId: complaints.orderId,
-          customerId: complaints.customerId,
-          reason: complaints.reason,
-          proofImageUrls: complaints.proofImageUrls,
-          proofVideoUrl: complaints.proofVideoUrl,
-          status: complaints.status,
-          resolution: complaints.resolution,
-          createdAt: complaints.createdAt,
-          updatedAt: complaints.updatedAt,
-        });
+        .returning(COMPLAINT_COLUMNS);
 
       if (!created) {
         throw new Error("Failed to insert complaint.");
       }
 
-      return {
-        id: created.id,
-        orderId: created.orderId,
-        customerId: created.customerId,
-        reason: created.reason,
-        proofImageUrls: created.proofImageUrls,
-        proofVideoUrl: created.proofVideoUrl,
-        status: created.status,
-        resolution: created.resolution,
-        createdAt: created.createdAt.toISOString(),
-        updatedAt: created.updatedAt.toISOString(),
-      };
+      return mapComplaintRow(created);
     } catch (error) {
       if (isUniqueViolation(error)) {
         throw new ConflictException({
@@ -159,5 +170,38 @@ export class ComplaintsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Lists a customer's complaints for an owned order, returning `[]` when none exist.
+   * Enforces the same anti-enumeration ownership boundary as `submitComplaint`.
+   */
+  async listComplaints(
+    customerId: string,
+    orderId: string,
+  ): Promise<ComplaintProjection[]> {
+    const [orderRow] = await this.db
+      .select({
+        id: orders.id,
+        customerId: orders.customerId,
+      })
+      .from(orders)
+      .where(eq(orders.id, orderId))
+      .limit(1);
+
+    if (!orderRow || orderRow.customerId !== customerId) {
+      throw new NotFoundException({
+        code: API_ERROR_CODES.ORDER_NOT_FOUND,
+        detail: MESSAGES.ORDERS.NOT_FOUND,
+      });
+    }
+
+    const rows = await this.db
+      .select(COMPLAINT_COLUMNS)
+      .from(complaints)
+      .where(eq(complaints.orderId, orderId))
+      .orderBy(desc(complaints.createdAt));
+
+    return rows.map(mapComplaintRow);
   }
 }

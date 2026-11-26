@@ -26,13 +26,13 @@ const VALID_IMAGE_URL = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}
 const VALID_VIDEO_URL = `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/video/upload/v1/complaints/clip.mp4`;
 
 function createSelectChain<T>(rows: T[]) {
-  return {
-    from: () => ({
-      where: () => ({
-        limit: () => Promise.resolve(rows),
-      }),
-    }),
+  const chain = {
+    from: () => chain,
+    where: () => chain,
+    orderBy: () => Promise.resolve(rows),
+    limit: () => Promise.resolve(rows),
   };
+  return chain;
 }
 
 function createServiceHarness(options: {
@@ -43,6 +43,18 @@ function createServiceHarness(options: {
     deliveredAt: Date | null;
   }[];
   existingComplaintRows?: { id: string }[];
+  complaintRows?: {
+    id: string;
+    orderId: string;
+    customerId: string;
+    reason: string;
+    proofImageUrls: string[];
+    proofVideoUrl: string | null;
+    status: ComplaintStatus;
+    resolution: ComplaintResolution | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }[];
   insertError?: Error;
   verifyError?: Error;
 }) {
@@ -73,6 +85,9 @@ function createServiceHarness(options: {
       selectCall += 1;
       if (selectCall === 1) {
         return createSelectChain(options.orderRows);
+      }
+      if (options.complaintRows !== undefined) {
+        return createSelectChain(options.complaintRows);
       }
       return createSelectChain(options.existingComplaintRows ?? []);
     }),
@@ -311,6 +326,89 @@ describe("ComplaintsService", () => {
       }
       expect(caught).toBeInstanceOf(UnprocessableEntityException);
       expect(insertReturning).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("listComplaints", () => {
+    const createdAt = new Date("2026-11-25T10:00:00.000Z");
+
+    it("returns the customer's mapped complaints for an owned order", async () => {
+      const { service } = createServiceHarness({
+        orderRows: [
+          {
+            id: ORDER_ID,
+            customerId: CUSTOMER_ID,
+            orderStatus: OrderStatus.DELIVERED,
+            deliveredAt: new Date("2026-11-25T08:00:00.000Z"),
+          },
+        ],
+        complaintRows: [
+          {
+            id: COMPLAINT_ID,
+            orderId: ORDER_ID,
+            customerId: CUSTOMER_ID,
+            reason: "Rau bị dập nát khi giao hàng",
+            proofImageUrls: [VALID_IMAGE_URL],
+            proofVideoUrl: null,
+            status: ComplaintStatus.PENDING,
+            resolution: null,
+            createdAt,
+            updatedAt: createdAt,
+          },
+        ],
+      });
+
+      const result = await service.listComplaints(CUSTOMER_ID, ORDER_ID);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: COMPLAINT_ID,
+        orderId: ORDER_ID,
+        customerId: CUSTOMER_ID,
+        status: ComplaintStatus.PENDING,
+        resolution: null,
+        createdAt: createdAt.toISOString(),
+        updatedAt: createdAt.toISOString(),
+      });
+    });
+
+    it("returns an empty array when the owned order has no complaint", async () => {
+      const { service } = createServiceHarness({
+        orderRows: [
+          {
+            id: ORDER_ID,
+            customerId: CUSTOMER_ID,
+            orderStatus: OrderStatus.DELIVERED,
+            deliveredAt: new Date("2026-11-25T08:00:00.000Z"),
+          },
+        ],
+        complaintRows: [],
+      });
+
+      const result = await service.listComplaints(CUSTOMER_ID, ORDER_ID);
+      expect(result).toEqual([]);
+    });
+
+    it("throws anti-enumeration not-found for a foreign or missing order", async () => {
+      const { service } = createServiceHarness({
+        orderRows: [
+          {
+            id: ORDER_ID,
+            customerId: OTHER_CUSTOMER_ID,
+            orderStatus: OrderStatus.DELIVERED,
+            deliveredAt: new Date("2026-11-25T08:00:00.000Z"),
+          },
+        ],
+        complaintRows: [],
+      });
+
+      let caught: unknown;
+      try {
+        await service.listComplaints(CUSTOMER_ID, ORDER_ID);
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(NotFoundException);
     });
   });
 });

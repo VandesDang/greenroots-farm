@@ -1,4 +1,4 @@
-import { Body, Controller, HttpStatus, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, HttpStatus, Param, Post } from "@nestjs/common";
 import { ApiOperation, ApiParam, ApiTags } from "@nestjs/swagger";
 import { UserRole } from "@greenroots/shared";
 import { ERROR_SLUGS, MESSAGES } from "@/common/constants/messages.constant";
@@ -9,6 +9,7 @@ import {
   ApiCreatedResponseGeneric,
   ApiInternalServerErrorResponseRfc9457,
   ApiNotFoundResponseRfc9457,
+  ApiOkResponseGeneric,
   ApiRfc9457Response,
   ApiTooManyRequestsResponseRfc9457,
   ApiUnprocessableEntityResponseRfc9457,
@@ -34,6 +35,32 @@ import {
 @ApiInternalServerErrorResponseRfc9457()
 export class ComplaintsController {
   constructor(private readonly complaintsService: ComplaintsService) {}
+
+  @Get(COMPLAINTS_ROUTES.LIST)
+  @ApiAuth(UserRole.CUSTOMER)
+  @ApiOperation({
+    summary: "List a customer's complaints for an order",
+    description:
+      "Returns the customer's complaints for an owned order (an empty array when none exist), preserving anti-enumeration ownership.",
+  })
+  @ApiParam({
+    name: "id",
+    type: "string",
+    format: "uuid",
+    description: "Order UUIDv7 identifier",
+  })
+  @ApiOkResponseGeneric(ComplaintDto, { isArray: true })
+  @ApiNotFoundResponseRfc9457()
+  async listComplaints(
+    @CurrentUser("sub") userId: string,
+    @Param("id", new ZodValidationPipe(zUuidV7())) orderId: string,
+  ): Promise<ApiResponse<ComplaintProjection[]>> {
+    const complaints = await this.complaintsService.listComplaints(
+      userId,
+      orderId,
+    );
+    return apiSuccess(complaints);
+  }
 
   @Post(COMPLAINTS_ROUTES.SUBMIT)
   @ApiAuth(UserRole.CUSTOMER)

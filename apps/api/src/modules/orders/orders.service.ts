@@ -119,6 +119,7 @@ const ORDER_COLUMNS = {
   paymentMethod: orders.paymentMethod,
   paymentStatus: orders.paymentStatus,
   reservationExpiresAt: orders.reservationExpiresAt,
+  deliveredAt: orders.deliveredAt,
   receiverName: orders.receiverName,
   receiverPhone: orders.receiverPhone,
   shippingAddress: orders.shippingAddress,
@@ -2268,6 +2269,7 @@ export class OrdersService {
       reservationExpiresAt: row.reservationExpiresAt
         ? row.reservationExpiresAt.toISOString()
         : null,
+      deliveredAt: row.deliveredAt ? row.deliveredAt.toISOString() : null,
       items,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

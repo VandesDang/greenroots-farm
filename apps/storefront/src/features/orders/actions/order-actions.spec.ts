@@ -192,6 +192,7 @@ describe("order-actions", () => {
         totalAmountVnd: 101_000,
         paymentUrl: null,
         reservationExpiresAt: null,
+        deliveredAt: null,
         items: [],
         createdAt: "2026-11-24T14:00:00.000Z",
         updatedAt: "2026-11-24T14:00:00.000Z",

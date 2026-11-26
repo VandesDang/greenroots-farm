@@ -160,6 +160,17 @@ describe("Complaints Integration", () => {
         .where(eq(orders.id, order.id));
       expect(afterDelivered?.deliveredAt).toBeInstanceOf(Date);
 
+      const orderDetailRes = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${order.id}`)
+        .set(customerHeader)
+        .expect(200);
+      const orderDetail = orderDetailRes.body as ApiResponse<{
+        deliveredAt: string | null;
+      }>;
+      expect(orderDetail.data.deliveredAt).toBe(
+        afterDelivered!.deliveredAt!.toISOString(),
+      );
+
       await request(app.getHttpServer())
         .patch(`/api/v1/orders/${order.id}/status`)
         .set(salesHeader)
@@ -402,6 +413,89 @@ describe("Complaints Integration", () => {
 
       const statuses = [first.status, second.status].sort((a, b) => a - b);
       expect(statuses).toEqual([201, 409]);
+    });
+  });
+
+  describe("GET /api/v1/orders/:id/complaints", () => {
+    it("returns the submitted complaint for the owning customer", async () => {
+      const { order } = await createOrder(setup.db, {
+        customerId,
+        orderStatus: OrderStatus.DELIVERED,
+        deliveredAt: new Date(Date.now() - 60 * 60 * 1000),
+        items: [{ productId, quantity: "1.00", unitPrice: 50_000 }],
+      });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/orders/${order.id}/complaints`)
+        .set(customerHeader)
+        .send({
+          reason: "Rau bị dập nát khi nhận hàng",
+          proofImageUrls: [VALID_IMAGE_URL],
+        })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${order.id}/complaints`)
+        .set(customerHeader)
+        .expect(200);
+
+      const body = res.body as ApiResponse<ComplaintResponse[]>;
+      expect(body.success).toBe(true);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0]).toMatchObject({
+        orderId: order.id,
+        customerId,
+        status: ComplaintStatus.PENDING,
+        resolution: null,
+      });
+    });
+
+    it("returns an empty array when the order has no complaint", async () => {
+      const { order } = await createOrder(setup.db, {
+        customerId,
+        orderStatus: OrderStatus.DELIVERED,
+        deliveredAt: new Date(Date.now() - 60 * 60 * 1000),
+        items: [{ productId, quantity: "1.00", unitPrice: 50_000 }],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${order.id}/complaints`)
+        .set(customerHeader)
+        .expect(200);
+
+      const body = res.body as ApiResponse<ComplaintResponse[]>;
+      expect(body.data).toEqual([]);
+    });
+
+    it("returns not-found when the order belongs to another customer", async () => {
+      const { order } = await createOrder(setup.db, {
+        customerId,
+        orderStatus: OrderStatus.DELIVERED,
+        deliveredAt: new Date(Date.now() - 60 * 60 * 1000),
+        items: [{ productId, quantity: "1.00", unitPrice: 50_000 }],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/orders/${order.id}/complaints`)
+        .set(otherCustomerHeader)
+        .expect(404);
+
+      const body = res.body as Rfc9457ProblemDetails;
+      expect(body.code).toBe(API_ERROR_CODES.ORDER_NOT_FOUND);
+    });
+
+    it("rejects staff role from the customer read endpoint", async () => {
+      const { order } = await createOrder(setup.db, {
+        customerId,
+        orderStatus: OrderStatus.DELIVERED,
+        deliveredAt: new Date(Date.now() - 60 * 60 * 1000),
+        items: [{ productId, quantity: "1.00", unitPrice: 50_000 }],
+      });
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/orders/${order.id}/complaints`)
+        .set(salesHeader)
+        .expect(403);
     });
   });
 });

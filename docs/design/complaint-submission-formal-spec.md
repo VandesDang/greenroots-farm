@@ -19,7 +19,9 @@ This specification defines the implementation contract for `#32` (Epic `#13`), r
 - Add nullable `deliveredAt` (`delivered_at`, `timestamptz`) to `orders` in `apps/api/src/database/schemas/order.schema.ts` via a forward-only Drizzle migration, and stamp `deliveredAt` once in `OrdersService.updateOrderStatus` when transitioning to `OrderStatus.DELIVERED`.
 - Extend `CloudinaryService` (`apps/api/src/modules/media`) with out-of-transaction metadata verification against Cloudinary's Admin Resource API (`bytes` and `duration`), keeping dev/test `CLOUDINARY_API_SECRET`-absent mock bypass (`ADR-0009`) and failing closed (`503`) on production outages/timeouts.
 - Implement `POST /api/v1/orders/:id/complaints` (`201 Created`, `ComplaintDto` omitting `resolvedBy`) enforcing anti-enumeration `404 ORDER_NOT_FOUND`, `DELIVERED`/`COMPLETED` eligibility, strict 24-hour window from `deliveredAt`, single-complaint uniqueness (`409`), and HTML-stripped `reason` (`10..2000` chars).
-- Update `bun run types:sync` and add unit + E2E integration tests covering 24h boundary, `COMPLETED` within 24h, ownership isolation, duplicate `409`, and media constraint enforcement.
+- Expose nullable `deliveredAt` on the customer `OrderDto` projection so the storefront can render the 24-hour countdown and lock expired submissions.
+- Implement `GET /api/v1/orders/:id/complaints` (`200`, `ComplaintDto[]`) for reload-safe status/duplicate display, returning `[]` when none and the same anti-enumeration `404 ORDER_NOT_FOUND` boundary.
+- Update `bun run types:sync` and add unit + E2E integration tests covering 24h boundary, `COMPLETED` within 24h, ownership isolation, duplicate `409`, read-projection isolation, and media constraint enforcement.
 
 ### Non-Goals
 
@@ -92,12 +94,19 @@ sequenceDiagram
     Svc-->>Customer: 201 ComplaintDto
 ```
 
+### 3. Complaint Read Projection (`GET /api/v1/orders/:id/complaints`)
+
+1. Authenticated customers read the complaint list for an owned order; the projection omits internal `resolvedBy` and returns `200 []` when no complaint exists yet.
+2. Anti-enumeration ownership is enforced identically to submission: a missing or foreign order yields `404 ORDER_NOT_FOUND`.
+3. The customer `OrderDto` additionally projects nullable `deliveredAt` so the storefront can derive the 24-hour deadline without fabricating a timestamp.
+
 ## Domain Invariants
 
 - **`INV-CMP-1` (Anti-Enumeration Ownership)**: `POST /api/v1/orders/:id/complaints` MUST return `404 ORDER_NOT_FOUND` when the order does not exist or is owned by a different customer (`ADR-0032`).
 - **`INV-CMP-2` (Immutable 24-Hour Delivery Window)**: Eligibility requires `orderStatus` in `[DELIVERED, COMPLETED]`, non-null `orders.deliveredAt`, and `now.getTime() - order.deliveredAt.getTime() <= BUSINESS_RULES.COMPLAINT_WINDOW_HOURS * 3600 * 1000`.
 - **`INV-CMP-3` (Single Complaint Per Order)**: At most one row in `complaints` may reference a given `order_id` (`complaints_order_id_uidx`); duplicate submissions fail with `409 ORDER_COMPLAINT_ALREADY_EXISTS`.
 - **`INV-CMP-4` (Server-Verified Media Boundaries)**: Every submitted proof image MUST reside in `complaints` and satisfy `bytes <= 5MB`; an optional proof video MUST reside in `complaints` and satisfy `bytes <= 15MB` and `duration <= 15s`, verified via Cloudinary Admin API outside any DB transaction (with `503` fail-closed on upstream failure in production and mock bypass when `CLOUDINARY_API_SECRET` is unset in dev/test).
+- **`INV-CMP-5` (Read Isolation)**: `GET /api/v1/orders/:id/complaints` MUST return `404 ORDER_NOT_FOUND` for missing/foreign orders and otherwise return the customer's complaints (possibly `[]`) without exposing internal `resolvedBy`.
 
 ## Phased Implementation Plan (Atomic Slices)
 

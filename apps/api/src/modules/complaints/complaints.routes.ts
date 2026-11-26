@@ -5,4 +5,5 @@ export const COMPLAINTS_ROUTES = Object.freeze({
   TAG: "complaints",
   ORDERS_BASE: "orders",
   SUBMIT: ":id/complaints",
+  LIST: ":id/complaints",
 } as const);
