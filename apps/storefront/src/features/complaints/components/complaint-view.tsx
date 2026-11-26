@@ -177,7 +177,6 @@ export function ComplaintView({
               ) : (
                 <ComplaintForm
                   order={order}
-                  expired={false}
                   onSubmitted={(submitted) => {
                     setLocalComplaint(submitted);
                     setTab("status");

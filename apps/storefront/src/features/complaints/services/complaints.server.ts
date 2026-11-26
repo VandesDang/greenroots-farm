@@ -1,5 +1,4 @@
 import { api } from "@/lib/api-client";
-import { runWithServerActionRefresh } from "@/features/auth/services/session.server";
 import type { OrderDto } from "@/features/orders/schemas/order.schema";
 import {
   resolveCustomerOrderDetailSession,
@@ -36,7 +35,6 @@ async function fetchOrderComplaintsResponse(
   orderId: string,
   deps?: Pick<ComplaintsServerDeps, "runWithRefresh" | "fetchComplaints">,
 ) {
-  const runWithRefresh = deps?.runWithRefresh ?? runWithServerActionRefresh;
   const fetchComplaints =
     deps?.fetchComplaints ??
     ((id: string) =>
@@ -45,7 +43,11 @@ async function fetchOrderComplaintsResponse(
         cache: "no-store",
       }));
 
-  return runWithRefresh(() => fetchComplaints(orderId));
+  // Avoid mutating cookies inside React Server Components on 401; proxy handles proactive refresh.
+  if (deps?.runWithRefresh) {
+    return deps.runWithRefresh(() => fetchComplaints(orderId));
+  }
+  return fetchComplaints(orderId);
 }
 
 /**

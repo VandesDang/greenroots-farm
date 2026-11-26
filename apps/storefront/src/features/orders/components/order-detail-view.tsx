@@ -35,7 +35,7 @@ import { ReorderButton } from "./reorder-button";
 
 interface OrderDetailViewProps {
   readonly order: OrderDto;
-  readonly serverNowMs?: number;
+  readonly serverNowMs: number;
   readonly hasComplaint?: boolean;
 }
 
@@ -102,7 +102,7 @@ export function OrderDetailView({
   const complaintWindowState = resolveComplaintWindowState(
     order.orderStatus,
     order.deliveredAt,
-    serverNowMs ?? 0,
+    serverNowMs,
   );
   const canSubmitComplaint = complaintWindowState === "open";
 

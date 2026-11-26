@@ -39,7 +39,6 @@ import {
 
 interface ComplaintFormProps {
   readonly order: OrderDto;
-  readonly expired: boolean;
   readonly onSubmitted: (complaint: ComplaintDto) => void;
   readonly onSessionInvalidated: () => void;
 }
@@ -70,7 +69,6 @@ function isComplaintReasonType(value: string): value is ComplaintReasonType {
  */
 export function ComplaintForm({
   order,
-  expired,
   onSubmitted,
   onSessionInvalidated,
 }: ComplaintFormProps) {
@@ -114,7 +112,6 @@ export function ComplaintForm({
       : null;
 
   const canSubmit =
-    !expired &&
     !isUploading &&
     !submitting &&
     readyImageUrls.length > 0 &&
@@ -128,11 +125,12 @@ export function ComplaintForm({
       return;
     }
 
+    let firstValidationError: string | null = null;
     const accepted: ImageUpload[] = [];
     for (const file of files.slice(0, remaining)) {
       const error = validateComplaintImage(file);
       if (error) {
-        setSubmitError(error);
+        firstValidationError ??= error;
         continue;
       }
       const previewUrl = URL.createObjectURL(file);
@@ -146,12 +144,12 @@ export function ComplaintForm({
         error: null,
       });
     }
+    setSubmitError(firstValidationError);
     if (accepted.length === 0) {
       return;
     }
 
     setImages((current) => [...current, ...accepted]);
-    setSubmitError(null);
 
     await Promise.all(
       accepted.map(async (upload) => {
